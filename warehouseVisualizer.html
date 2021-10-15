@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<html>
+<head>
+<title>Warehouse Visualizer</title>
+
+<!--D3 -->
+<script src="lib/d3.v4.min.js" charset="utf-8"></script>
+<script src="lib/d3-scale-chromatic.v1.min.js"></script>
+<script src="lib/d3-color.v1.min.js"></script>
+<script src="lib/d3-interpolate.v1.min.js"></script>
+<script src="lib/d3-legend.min.js" charset="utf-8"></script> <!--https://github.com/susielu/d3-legend -->
+
+<!--jQuery-->
+<script src="lib/jquery-3.3.1.min.js" charset="utf-8"></script>
+
+<!--w2ui http://w2ui.com/web/ -->
+<link rel="stylesheet" type="text/css" href="css/w2ui-1.5.rc1.min.css" />
+<script src="lib/w2ui.min.js" charset="utf-8"></script> 
+
+<!--Gorilla DrillDown https://www.jqueryscript.net/form/Custom-HTML-Select-Element-jQuery-Gorilla-Dropdown.html -->
+<link rel="stylesheet" href="css/jquery.gorilla-dropdown.css">
+<script type="text/javascript" src="lib/jquery.gorilla-dropdown.min.js"></script> 
+
+<!-- jQuery-simple-datetimepicer  http://mugifly.github.io/jquery-simple-datetimepicker/    -->
+<!-- Close Button new feature: https://github.com/mugifly/jquery-simple-datetimepicker/issues/174 -->
+<link rel="stylesheet" href="css/jquery.simple-dtpicker.css">
+<script type="text/javascript" src="lib/jquery.simple-dtpicker.js"></script> 
+ 
+<!--ThreeJS -->
+<script src="lib/three.min.js"></script>
+<script src="lib/Detector.js"></script>
+<script src="lib/statsCustom.min.js"></script> <!-- https://github.com/mrdoob/stats.js/ -->
+<script src="lib/OrbitControls.js"></script>
+<script src="lib/THREEx.WindowResize.js"></script>
+
+<!-- dat.GUI -->
+<script type="text/javascript" src="lib/dat.gui.js"></script>
+
+<!-- hashMap //https://github.com/flesler/hashmap -->
+<script src="lib/hashmap.js"></script>
+
+<!--Schema, Custom Callbacks and Visual Warehouse Code -->
+<script src="lib/schemaLoads.js"></script>
+<script src="lib/translations.js"></script>
+<script src="lib/warehouseVisualizer.js"></script>
+
+<script>
+// GLOBAL VARIABLES
+var visualWarehouse, datGui, datGuiSettings, layoutData, inventoryData, activityCompletedData, activityActiveData, fileName;
+var dataFolder = "data";
+var aLanguages = ["English","Spanish","Swedish","Finnish","French","Danish","Lithuanian","Polish","Indonesian","Filipino","Chinese","Czech","Dutch","Estonian","German","Greek","Hebrew","Icelandic","Italian","Japanese","Korean","Latvian","Norwegian","Persian","Portuguese","Romanian","Russian","Serbian","Slovak","Slovenian"];
+var aLanguageCodes = ["en","es","sv","fi","fr","da","lt","pl","id","fil","zh-CN","cs","nl","et","de","el","he","is","it","ja","ko","lv","nb","fa","pt","ro","ru","sr","sk","sl"];
+
+var localLanguage = aLanguageCodes[0];   //en(glish) or sp(anish)
+
+
+var aFeatureVersion = ["Full","Activity"];
+var featureVersion = aFeatureVersion[0];
+
+var noAlert = (window.location.hash == "#NoAlert");   //By default, show alert messages.  To turn-off, use #NoAlert location hash
+
+function fnGetWarehouseListAndLoad(initialFileToLoad) {
+
+	d3.csv( dataFolder + "/warehouses.txt", function(error,warehouseList){
+												if (error) {
+													alert(translations[localLanguage].errorLoadingFile + dataFolder + "/warehouses.txt");
+													return;
+												}	
+
+												warehouseList.columns.forEach(function(column,i){ warehouseList.columns[i] = column.trim();});
+												
+												fnBuildDatGuiAndLoad(warehouseList.columns,warehouseList.columns.indexOf(initialFileToLoad) )
+											});
+} //fnGetWarehouseListAndLoad
+
+
+function fnBuildDatGuiAndLoad(aFiles,initialLoad){
+
+		var strLoadText =  "View";    //Can be internationalized 
+		var strLanguageText = "Language";   
+
+		if (datGui) { 
+			//datGui.destroy();
+			var dg = d3.select(".dg.main").node();
+			dg.parentNode.removeChild(dg);
+		}	
+			
+		//datGui  = new dat.GUI({closeOnTop: true, width:325, autoPlace:false});
+		datGui  = new dat.GUI({closeOnTop: true, 
+							    width:450, 
+								text_open: translations[localLanguage].text_open, 
+								text_close:translations[localLanguage].text_close });
+		//datGui.useLocalStorage = true;
+		
+		d3.select("body").node().appendChild(datGui.domElement);
+		
+		var zIndex = parseFloat($(d3.select("body").node()).css("z-index")) ?  parseFloat($(d3.select("body").node()).css("z-index"))  : 0;
+		
+		d3.select(".dg.main")
+			.style("position","absolute")
+			//.style("top",0)
+			.style("right",0)
+			.style("z-index",zIndex - 1);		
+		
+		
+		var aFilesDisplay = aFiles.map(function(file) { return file + " Warehouse";});
+		
+		datGuiSettings = {fileDisplay: aFilesDisplay[ typeof initialLoad == "undefined" ? 0 : initialLoad ],
+						  //language: localLanguage == "en" ? "English" : "Spanish",
+						  language: aLanguages[aLanguageCodes.findIndex(function(code) {return code == localLanguage })],
+						  featureVersion: featureVersion
+						  };
+		
+		var fileController = datGui.add(datGuiSettings, "fileDisplay", aFilesDisplay).name(strLoadText).onChange(function (fileDisplay){
+																						var file = fileDisplay.split(" ")[0]; 
+																						fnBuildDatGuiAndLoad( aFiles,aFiles.indexOf(file) );
+																					 });
+		
+		datGui.add(datGuiSettings, "language", aLanguages).name(strLanguageText).onChange(function (language){
+																						//localLanguage = language.substr(0,2).toLowerCase();
+																						localLanguage = aLanguageCodes[aLanguages.findIndex(function(lang) {return lang == language })];
+																						var file = fileController.getValue().split(" ")[0];
+																						fnBuildDatGuiAndLoad( aFiles,aFiles.indexOf(file) );
+																					 });	
+
+		datGui.add(datGuiSettings, "featureVersion", aFeatureVersion).name("Version").onChange(function (fVersion){
+																						featureVersion = fVersion;
+																						var file = fileController.getValue().split(" ")[0];
+																						fnBuildDatGuiAndLoad( aFiles,aFiles.indexOf(file) );
+																					 });																						 
+		
+		
+		
+		if (visualWarehouse) {
+			visualWarehouse.destroy();
+			visualWarehouse = null;
+		}
+		
+		fileName =  aFiles[initialLoad] + ".csv";
+
+		fnLoadFiles();
+		
+		return;
+
+} //fnBuildDatGuiAndLoad
+
+
+function fnLoadFiles() {
+
+	//First load layout Data
+	d3.csv(dataFolder + "/layoutData/" + fileName , function(error, layoutDataFromFile) {
+	
+			if (error) {
+				alert(translations[localLanguage].errorLoadingFile + dataFolder + "/layoutData/"  + fileName);
+				return;
+			}			
+		
+		layoutData = layoutDataFromFile;
+		fnLoadActivityInventoryData();
+		
+	});
+} //fnLoadFiles
+
+function fnLoadActivityInventoryData(){
+		d3.csv(dataFolder + "/activityData/completed/" + fileName , function (error,activityCompletedFile) {
+			
+			if (error) {
+				if (featureVersion == "Full" && !noAlert)
+					alert(translations[localLanguage].errorLoadingFile + dataFolder + "/activityData/completed/" + fileName);
+			}
+		
+			activityCompletedData = (featureVersion == "Full") ? activityCompletedFile : null;
+			
+			d3.csv(dataFolder + "/activityData/active/" + fileName , function(error, activityActiveFile) {
+			
+				if (error) {
+					if (!noAlert) alert(translations[localLanguage].errorLoadingFile + dataFolder + "/activityData/active/" + fileName);
+					if (featureVersion == "Activity") return;
+				}
+			
+				activityActiveData = activityActiveFile;
+			
+				d3.csv(dataFolder + "/inventoryData/" + fileName , function(error, inventoryDataFromFile) {
+								
+						if (error) {
+							if (featureVersion == "Full" && !noAlert)
+								alert(translations[localLanguage].errorLoadingFile + dataFolder + "/inventoryData/" + fileName);
+						}	
+						
+						inventoryData = (featureVersion == "Full") ? inventoryDataFromFile : null;
+
+						fnLoadsComplete();
+					
+				  });	
+			 });
+		});
+		
+} //fnLoadActivityInventoryData 
+
+	
+// DESIGN PATTERN WHEN VISUAL WAREHOUSE IS BEING PROGRAMATTICALLY DRIVEN
+function fnLoadsComplete() {
+
+
+				if (window.location.hash == "#CheckData") {
+				  fnCheckData();
+				  return;
+					
+				}
+
+
+				if (!visualWarehouse) {
+					//GET SCHEMA and PRE-PROCESS FUNCTION FOR WAREHOUSE VISUAL
+					var warehouseInfo =  fnGetWarehouseSchemaLoads();
+					
+					//PREPARE THE VISUAL OPTIONS 
+					var objWarehouse = {
+							localLanguage: localLanguage,																			//English or Spanish
+							featureVersion: featureVersion,																			//Full or Activity only	
+							translations: translations,																				//translation in translations.js
+							datGui: datGui,																							//dat.gui  http://workshop.chromeexperiments.com/examples/gui/#1--Basic-Usage 
+							datGuiSettings: datGuiSettings,																			//API: https://github.com/dataarts/dat.gui/blob/master/API.md				
+							//scene: {background: "#060c37"},
+							scene: {background: "#2f0202"},
+							boundingBox:{visible:true, color:"white"},
+							axesHelper: {visible:false},
+							gridHelper: {visible:true},
+							container: d3.select("body").node(),																	//The container hosting the visualization
+							schema: warehouseInfo.schema,
+							callBackLayoutData: warehouseInfo.callBackLayoutData,
+							callBackActivityCompletedData: warehouseInfo.callBackActivityCompletedData,
+							callBackActivityActiveData: warehouseInfo.callBackActivityActiveData,
+							callBackInventoryData: warehouseInfo.callBackInventoryData,
+							aisleWidthEdgeToEdge: (12 * 11),																		//Aisle distance, from slot edges
+							refreshTime: 1																							//ActivityLoad refresh time in minutes
+						};
+				 
+				 
+				 
+					//INSTANTIATE NEW VISUAL WITH OPTIONS
+					visualWarehouse =  new warehouse(objWarehouse);
+				    visualWarehouse.setLayoutData(layoutData);
+					
+					//Add Selection Links examples referencing ITEM DESCRIPTION to bing search and google
+					visualWarehouse.addSelectionLink({url:"https://www.bing.com/search?"   , urlText:"Bing Search Item"  , "q":"ITEM DESCRIPTION"});
+					visualWarehouse.addSelectionLink({url:"https://www.google.com/search?" , urlText:"Google Search Item", "q":"ITEM DESCRIPTION"});
+					
+				} //if
+				
+				visualWarehouse.setActivityCompletedData(activityCompletedData);
+				visualWarehouse.setActivityActiveData(activityActiveData);
+				visualWarehouse.setInventoryData(inventoryData);
+				
+				if (!visualWarehouse.scene.obj) {	
+					visualWarehouse.setColumn(translations[localLanguage].datGuiInversion);
+					visualWarehouse.setCallBackReload(fnLoadActivityInventoryData);
+					visualWarehouse.display();
+					
+				} //if
+	 
+} //fnLoadsComplete
+
+function fnCheckData() {
+	if (!$("#dataGrids")[0]) {
+		var dataGrids = $('<div id="dataGrids" style="position:absolute; top:125px; width: 95%; height: 100px;"></div>').appendTo('body')
+		var layoutGrid = $('<div id="layoutGrid" style="width: 100%; height: 150px;"></div>').appendTo(dataGrids);
+		$('<div>&nbsp;</div>').appendTo(dataGrids);
+		var inventoryGrid = $('<div id="inventoryGrid" style="width: 100%; height: 150px;"></div>').appendTo(dataGrids)
+		$('<div>&nbsp;</div>').appendTo(dataGrids);
+		var completedGrid = $('<div id="completedGrid" style="width: 100%; height: 150px;"></div>').appendTo(dataGrids);
+		$('<div>&nbsp;</div>').appendTo(dataGrids);	
+		var activeGrid = $('<div id="activeGrid" style="width: 100%; height: 100px;"></div>').appendTo(dataGrids);
+	} //if
+	else {
+		var layoutGrid = 	$("#layoutGrid");
+		var inventoryGrid = $("#inventoryGrid");
+		var completedGrid = $("#completedGrid");
+		var activeGrid = 	$("#activeGrid");
+		
+		$().w2destroy("layoutGrid");
+		$().w2destroy("inventoryGrid");
+		$().w2destroy("completedGrid");
+		$().w2destroy("activeGrid");
+	}
+	
+	var numErrors;
+	
+	//Prep Layout Data for Data Grid
+	layoutData.forEach(function (row,i){
+			row.jsonString = JSON.stringify(row); 	
+			row.recid = i + 1;
+			});
+	
+	//Show Layout Data
+	fnAddGridData(layoutGrid, "Layout Data" + " (" + d3.format(',')(layoutData.length) + ")", layoutData);
+	
+	//Check that each Inventory Data Location is represented in Layout Data
+	if (inventoryData) {
+	
+		numErrors = 0;
+		inventoryData.forEach(function (inventoryRow,i){
+						inventoryRow.jsonString = JSON.stringify(inventoryRow); 	
+						inventoryRow.recid = i + 1;
+						var layoutIndex =  layoutData.findIndex(function (layoutRow){return layoutRow.LOCATION == inventoryRow.LOCATION});
+						if (layoutIndex == -1) {
+							++numErrors;
+							inventoryRow.w2ui = { style: "background-color: red" };
+						} //if 
+
+						});
+		
+		var strNumInventoryMatchError =  inventoryData.length != layoutData.length ? 
+																	"Error: " + d3.format(',')(layoutData.length) + " rows in Layout Data is not the same as " + d3.format(',')(inventoryData.length) + " rows in Inventory Data" :
+																	d3.format(',')(inventoryData.length);
+		fnAddGridData(inventoryGrid, "Inventory Data" + " (" + strNumInventoryMatchError  + ") Location Match Errors: (" +  d3.format(',')(numErrors) + ")"  , inventoryData);
+		
+	} //if
+	
+	if (activityCompletedData){
+	
+		//Check Completed Data
+		numErrors = fnGetToFromError(activityCompletedData);	
+		fnAddGridData(completedGrid, "Completed Activity Data (" + d3.format(',')(activityCompletedData.length)  + ") TO or FROM Location Match Errors: (" +  d3.format(',')(numErrors) + ")" , activityCompletedData);
+		 
+	} //if 
+	
+	//Check Active Data
+	if (activityActiveData) {
+	
+		numErrors = fnGetToFromError(activityActiveData);	
+		fnAddGridData(activeGrid, "Active Activity Data (" + d3.format(',')(activityActiveData.length)  + ") TO or FROM Location Match Errors: (" +  d3.format(',')(numErrors) + ")" , activityActiveData);
+		
+	} //if  	
+	return;
+	
+	
+	function fnAddGridData(grid, header, data) {
+	
+					
+		if (data[0].hasOwnProperty("LOCATION")) {
+			var columns = [	{field: "LOCATION", caption: "LOCATION", size: "15%"},
+							{field: "jsonString", caption: "Row Contents", size: "80%"}
+				          ];
+		} //if
+		else {
+			var columns = [	{field: "FROM_LOCATION", caption: "FROM LOCATION ", size: "15%"},
+							{field: "TO_LOCATION"  , caption: "TO LOCATION ", size: "15%"},
+							{field: "jsonString", caption: "Row Contents", size: "70%"}
+						  ];
+		} //else
+		
+		var gridObj = 
+			{ 	name: grid.attr("id"),
+			    header: header ,
+				show: 	{
+							header         : true,
+							lineNumbers    : true
+						},  				
+				columns: columns,
+				records: data		 
+			};
+		
+		grid.w2grid(gridObj);
+	
+	
+	
+	} //fnAddGridData
+	
+	
+	function fnGetToFromError(data){
+		var numErrors = 0;
+		data.forEach(function (row,i){
+						row.jsonString = JSON.stringify(row); 	
+						row.recid = i + 1;
+						var layoutIndex1 =  layoutData.findIndex(function (layoutRow){return layoutRow.LOCATION == row.FROM_LOCATION});
+						var layoutIndex2 =  layoutData.findIndex(function (layoutRow){return layoutRow.LOCATION == row.TO_LOCATION});
+						if (layoutIndex1 == -1 || layoutIndex2 == -1) {
+							++numErrors;
+							row.w2ui = { style: "background-color: red" };
+						} //if 					
+						
+						});	
+						
+		return numErrors;				
+	} //fnGetToFromError
+	
+
+} //fnCheckData
+
+
+</script>
+
+</head>
+
+<!-- Small,Medium,Large,Lipari1 -->
+<body onload="fnGetWarehouseListAndLoad('Small');"></body> 
+
+</html>
